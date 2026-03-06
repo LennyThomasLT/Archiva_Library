@@ -1,3 +1,6 @@
+from datetime import datetime
+from Models.User import Member
+
 class BookLending:
     def __init__(self, id, user, bookitem, price, issueDate, dueDate, returnDate, status):
         self.id = id
@@ -9,8 +12,13 @@ class BookLending:
         self.returnDate = returnDate
         self.status = status
 
-    def to_dict(self):
-
+    def calculateFine(self):
+        if datetime.now() > self.dueDate:
+            days_overdue = (datetime.now() - self.dueDate).days
+            return days_overdue * 10
+        return 0
+    
+    def to_dict(self, fine=None, member_score=None):
         return {
             "lendingID": self.id,
             "user": self.user.name,
@@ -19,5 +27,7 @@ class BookLending:
             "issueDate": str(self.issueDate),
             "dueDate": str(self.dueDate),
             "returnDate": str(self.returnDate),
-            "status": self.status
+            "status": self.status,
+            "fine": fine,
+            "member_score": self.user.score if isinstance(self.user, Member) else None
         }

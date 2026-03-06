@@ -196,6 +196,9 @@ class Library:
         if not success:
             return False, worker
 
+        if floor <= 0:
+            return False, "INVALID FLOOR"
+
         for rack in self.racks:
             if rack.floor == floor and rack.row == row:
                 return False, "RACK ALREADY EXISTS"
@@ -337,3 +340,38 @@ class Library:
         self.lendings.append(lending)
 
         return lending
+
+    # ------------------Return Book-------------------
+
+    def returnRequest(self, lendingID):
+        lending = self.findLending(lendingID)
+        if lending is None:
+            return False, "LENDING_NOT_FOUND"
+
+        if lending.status == "RETURNED":
+            return False, "RETURN_ALREADY"
+
+        user = lending.user
+        fine = lending.calculateFine()
+        if fine > 0 and isinstance(user, Member):
+            self.applyPenalty(user, fine)
+
+        self.closeLending(lending)
+        score = user.score if isinstance(user, Member) else None
+
+        return True, lending.to_dict(fine, score)
+
+    def findLending(self, lendingID):
+        for lending in self.lendings:
+            if lending.id == lendingID:
+                return lending
+        return None
+
+    def applyPenalty(self, user, fine):
+        user.score = max(0, user.score - fine/5)
+        return None
+
+    def closeLending(self, lending):
+        lending.status = "RETURNED"
+        lending.returnDate = datetime.now()
+        lending.bookitem.bookReturned()

@@ -96,9 +96,6 @@ print("TEST 7: Add Book Items")
 success, item1 = library.add_book_item(worker.id, "101", "BC001")
 print("Add BC001 to ISBN 101")
 
-# success, item2 = library.add_book_item(worker.id, "101", "BC002")
-# print("Add BC002 to ISBN 101")
-
 success, item3 = library.add_book_item(worker.id, "102", "BC003")
 print("Add BC003 to ISBN 102")
 
@@ -153,17 +150,23 @@ assert success == False
 
 print("PASS\n")
 
+print("TEST 12: Negative Floor Rack")
+
+success, result = library.add_rack(worker.id, -1, "B")
+
+print("Try add rack floor -1 ->", success)
+
+assert success == False
+
+print("PASS\n")
+
 # ---------------- PLACE BOOK ----------------
 
-print("TEST 12: Place Books")
+print("TEST 13: Place Books")
 
 print("Place BC001 -> Rack (1,A)")
 success, result = library.place_book_in_rack(worker.id, "BC001", 1, "A")
 assert success
-
-# print("Place BC002 -> Rack (1,A)")
-# success, result = library.place_book_in_rack(worker.id, "BC002", 1, "A")
-# assert success
 
 print("Place BC003 -> Rack (1,A)")
 success, result = library.place_book_in_rack(worker.id, "BC003", 1, "A")
@@ -179,7 +182,7 @@ assert success
 
 print("PASS\n")
 
-print("TEST 13: Place Duplicate Book")
+print("TEST 14: Place Duplicate Book")
 
 success, result = library.place_book_in_rack(worker.id, "BC001", 1, "A")
 
@@ -189,7 +192,7 @@ assert success == False
 
 print("PASS\n")
 
-print("TEST 14: Rack Not Exist")
+print("TEST 15: Rack Not Exist")
 
 success, result = library.place_book_in_rack(worker.id, "BC001", 9, "Z")
 
@@ -201,7 +204,7 @@ print("PASS\n")
 
 # ---------------- SEARCH ----------------
 
-print("TEST 15: Search Book")
+print("TEST 16: Search Book")
 
 result = library.find_book("Python")
 
@@ -211,7 +214,7 @@ assert len(result) == 1
 
 print("PASS\n")
 
-print("TEST 16: Search Not Found")
+print("TEST 17: Search Not Found")
 
 result = library.find_book("Unknown")
 
@@ -223,9 +226,9 @@ print("PASS\n")
 
 # ---------------- BORROW ----------------
 
-print("TEST 17: Normal User Borrow General Book")
+print("TEST 18: Normal User Borrow General Book")
 
-success, lending = library.requestBorrow(n1.id, "101")
+success, lending1 = library.requestBorrow(n1.id, "101")
 
 print("User", n1.id, "borrow ISBN 101 ->", success)
 
@@ -233,7 +236,7 @@ assert success
 
 print("PASS\n")
 
-print("TEST 18: Normal User Borrow Premium")
+print("TEST 19: Normal User Borrow Premium")
 
 success, result = library.requestBorrow(n1.id, "103")
 
@@ -243,9 +246,9 @@ assert success == False
 
 print("PASS\n")
 
-print("TEST 19: Member Borrow Premium")
+print("TEST 20: Member Borrow Premium")
 
-success, lending = library.requestBorrow(m1.id, "103")
+success, lending2 = library.requestBorrow(m1.id, "103")
 
 print("Member", m1.id, "borrow premium 103 ->", success)
 
@@ -253,7 +256,7 @@ assert success
 
 print("PASS\n")
 
-print("TEST 20: Borrow Book Not Available")
+print("TEST 21: Borrow Book Not Available")
 
 success, result = library.requestBorrow(n2.id, "101")
 
@@ -263,7 +266,7 @@ assert success == False
 
 print("PASS\n")
 
-print("TEST 21: Borrow Limit Reached")
+print("TEST 22: Borrow Limit Reached")
 
 success, result = library.requestBorrow(n1.id, "102")
 
@@ -273,4 +276,69 @@ assert success == False
 
 print("PASS\n")
 
+# ---------------- RETURN ----------------
+
+print("TEST 23: Return Book")
+
+success, result = library.returnRequest(lending1.id)
+
+print("Return lending:", lending1.id, "->", success)
+
+assert success
+
+print("PASS\n")
+
+print("TEST 24: Return Same Book Again")
+
+success, result = library.returnRequest(lending1.id)
+
+print("Return again ->", success)
+
+assert success == False
+
+print("PASS\n")
+
+print("TEST 25: Return Invalid ID")
+
+success, result = library.returnRequest(9999)
+
+print("Return invalid id ->", success)
+
+assert success == False
+
+print("PASS\n")
+
+print("TEST 26: Member Score Check")
+
+print("Member score:", m1.score)
+
+assert m1.score >= 0
+
+print("PASS\n")
+
 print("ALL TESTS PASSED")
+
+from datetime import datetime, timedelta
+
+print("TEST 27: Return Late (Fine Test)")
+
+# borrow ก่อน
+success, lending_late = library.requestBorrow(m2.id, "104")
+assert success
+
+# ทำให้ overdue
+lending_late.dueDate = datetime.now() - timedelta(days=1)
+
+old_score = m2.score
+
+success, result = library.returnRequest(lending_late.id)
+
+print("Fine:", result["fine"])
+print("Old Score:", old_score)
+print("New Score:", result["member_score"])
+
+assert success
+assert result["fine"] > 0
+assert result["member_score"] < old_score
+
+print("PASS\n")

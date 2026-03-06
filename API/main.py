@@ -251,6 +251,18 @@ def get_user_lendings(user_id: str):
 
     return result
 
+# ---------------- USER RETURN ----------------
+
+@app.post("/return")
+def return_book(lending_id: str):
+
+    success, result = library.returnRequest(lending_id)
+
+    if not success:
+        return {"error": result}
+
+    return result
+
 
 if __name__ == "__main__":
     uvicorn.run("API.main:app", host="127.0.0.1", port=8000, reload=True)
