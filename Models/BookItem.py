@@ -3,6 +3,7 @@ class BookItem:
         self.barcode = barcode
         self.book = book
         self.status = True
+        self.rack = None
 
     def checkAvailable(self):
         return self.status
@@ -12,5 +13,3 @@ class BookItem:
 
     def bookReturned(self):
         self.status = True
-
-    

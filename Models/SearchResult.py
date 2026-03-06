@@ -4,7 +4,7 @@ class SearchResult:
         self.title = book.title
         self.author = book.author
         self.price = book.price
-        self.book_type = book.booktype
+        self.book_type = book.booktype.value
         self.location = location
         self.available_amount = available_count
 

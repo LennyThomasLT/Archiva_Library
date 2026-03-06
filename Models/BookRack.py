@@ -6,12 +6,10 @@ class BookRack:
 
     def add_item(self, item):
         self.items.append(item)
+        item.rack = self
 
     def has_book(self, book):
-        for item in self.items:
-            if item.book == book:
-                return True
-        return False
+        return any(item.book == book for item in self.items)
 
     def get_full_location(self):
         return f"Floor {self.floor}, Row {self.row}"

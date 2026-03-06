@@ -1,4 +1,6 @@
 from enum import Enum
+from Models.BookItem import BookItem
+
 
 class BookType(Enum):
     GENERAL = "GENERAL"
@@ -17,6 +19,11 @@ class Book:
     def getBookType(self):
         return self.booktype
 
+    def addBookItem(self, barcode):
+        item = BookItem(barcode, self)
+        self.bookitems.append(item)
+        return item
+
     def getAvailableItem(self):
         for item in self.bookitems:
             if item.checkAvailable():
@@ -29,4 +36,3 @@ class Book:
             if item.checkAvailable():
                 count += 1
         return count
-    
