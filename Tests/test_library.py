@@ -342,3 +342,134 @@ assert result["fine"] > 0
 assert result["member_score"] < old_score
 
 print("PASS\n")
+
+
+print("TEST 28: Reservation Create")
+
+# borrow book ให้ unavailable ก่อน
+success, lending_res = library.requestBorrow(m1.id, "102")
+assert success
+
+# member อีกคน reserve
+success, res1 = library.reserveBook(m2.id, "102")
+
+print("Reserve book 102 by", m2.id, "->", success)
+
+assert success
+assert res1.status == "WAITING"
+
+print("PASS\n")
+
+
+print("TEST 29: Reservation Queue")
+
+success, queue = library.getReservationQueue("102")
+
+print("Queue:", queue)
+
+assert success
+assert len(queue) == 1
+assert queue[0]["position"] == 1
+
+print("PASS\n")
+
+
+print("TEST 30: Second Reservation")
+
+success, res2 = library.reserveBook(m1.id, "102")
+
+print("Second reserve ->", success)
+
+assert success
+
+success, queue = library.getReservationQueue("102")
+
+print("Queue after second reserve:", queue)
+
+assert len(queue) == 2
+assert queue[1]["position"] == 2
+
+print("PASS\n")
+
+
+print("TEST 31: Return Book Trigger READY")
+
+success, result = library.returnRequest(lending_res.id)
+
+assert success
+
+success, queue = library.getReservationQueue("102")
+
+print("Queue after return:", queue)
+
+assert queue[0]["status"] == "READY"
+
+print("PASS\n")
+
+
+print("TEST 32: Reserved User Borrow")
+
+success, lending_reserved = library.requestBorrow(m2.id, "102")
+
+print("Reserved user borrow ->", success)
+
+assert success
+
+success, queue = library.getReservationQueue("102")
+
+print("Queue after borrow:", queue)
+
+assert len(queue) == 1
+
+print("PASS\n")
+
+
+print("TEST 33: Cancel Reservation")
+
+success, temp_lending = library.requestBorrow(m1.id, "101")
+assert success
+
+success, res3 = library.reserveBook(m2.id, "101")
+assert success
+
+success, msg = library.cancelReservation(res3.id, m2.id)
+
+print("Cancel reservation ->", success)
+
+assert success
+
+print("PASS\n")
+print("TEST 34: Reservation Limit")
+
+books = ["201","202","203","204","205"]
+
+# create books
+for isbn in books:
+    library.add_book(worker.id, isbn, f"Book {isbn}", "X", 100, BookType.GENERAL)
+    library.add_book_item(worker.id, isbn, f"BC{isbn}")
+
+# ใช้ user ใหม่ borrow
+success, temp_user = library.register_user("Temp", "temp", "1234")
+success, temp_member = library.upgrade_member(temp_user.id)
+
+# borrow เพื่อทำให้ unavailable
+for isbn in books:
+    success, _ = library.requestBorrow(temp_member.id, isbn)
+    assert success
+
+# reserve 5 เล่ม
+for isbn in books:
+    success, _ = library.reserveBook(m2.id, isbn)
+    assert success
+
+# reserve เล่มที่ 6
+success, result = library.reserveBook(m2.id, "101")
+
+print("Try reserve more than 5 ->", success)
+
+assert success == False
+
+print("PASS\n")
+
+
+print("ALL RESERVATION TESTS PASSED")

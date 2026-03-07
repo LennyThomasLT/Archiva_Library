@@ -5,6 +5,7 @@ from Models.BookLending import BookLending
 from Models.BookRack import BookRack
 from Models.SearchResult import SearchResult
 from Models.User import Member, NormalUser, Worker, SystemAdmin
+from Models.BookReservation import BookReservation, ReservationStatus
 
 
 class Library:
@@ -14,6 +15,7 @@ class Library:
         self.racks = []
         self.users = []
         self.lendings = []
+        self.reservations = []
 
     # ---------------- VALIDATION ----------------
 
@@ -280,14 +282,11 @@ class Library:
         return count
 
     def requestBorrow(self, user_id, isbn):
-
         success, user = self.validate_user(user_id)
-
         if not success:
             return False, user
 
         success, book = self.validate_book(isbn)
-
         if not success:
             return False, book
 
@@ -298,8 +297,26 @@ class Library:
         if book.getBookType() == BookType.PREMIUM and isinstance(user, NormalUser):
             return False, "MEMBER ONLY"
 
-        item = book.getAvailableItem()
+        self.expireReservations(book)
+        if book.reservations:
+            first = book.reservations[0]
+            if first.user != user:
+                return False, "BOOK RESERVED"
 
+            if first.status == "READY":
+                item = book.getAvailableItem()
+                if not item:
+                    return False, "BOOK NOT READY"
+
+                lending = self.createLending(user, item)
+                first.status = "FULFILLED"
+                book.reservations.pop(0)
+                return True, lending
+            
+            else:
+                return False, "WAIT YOUR TURN"
+
+        item = book.getAvailableItem()
         if not item:
             return False, "BOOK NOT AVAILABLE"
 
@@ -372,6 +389,104 @@ class Library:
         return None
 
     def closeLending(self, lending):
+
         lending.status = "RETURNED"
         lending.returnDate = datetime.now()
         lending.bookitem.bookReturned()
+
+        book = lending.bookitem.book
+
+        if book.reservations:
+            first = book.reservations[0]
+
+            if first.status == "WAITING":
+                first.mark_ready()
+
+    #-------------Book Reservation----------------
+
+    def countActiveReservations(self, user):
+        count = 0
+
+        for r in self.reservations:
+            if r.user == user and r.status in ["WAITING", "READY"]:
+                count += 1
+
+        return count
+    
+    def expireReservations(self, book):
+        if not book.reservations:
+            return
+
+        first = book.reservations[0]
+
+        if first.is_expired():
+            first.status = "EXPIRED"
+            book.reservations.pop(0)
+
+            if book.reservations:
+                next_res = book.reservations[0]
+                next_res.mark_ready()
+
+    def reserveBook(self, user_id, isbn):
+        success, user = self.validate_user(user_id)
+        if not success:
+            return False, user
+
+        if not isinstance(user, Member):
+            return False, "MEMBER ONLY"
+
+        success, book = self.validate_book(isbn)
+        if not success:
+            return False, book
+
+        if self.countActiveReservations(user) >= 5:
+            return False, "RESERVATION LIMIT"
+
+        if book.getAvailableAmount() > 0:
+            return False, "BOOK AVAILABLE NO NEED RESERVE"
+
+        for r in book.reservations:
+            if r.user == user and r.status in ["WAITING", "READY"]:
+                return False, "ALREADY RESERVED"
+
+        running = len(self.reservations) + 1
+        rid = f"RES{running:04d}"
+
+        reservation = BookReservation(rid, user, book)
+        book.reservations.append(reservation)
+        self.reservations.append(reservation)
+
+        print("ACTIVE RES:", self.countActiveReservations(user))
+
+        return True, reservation
+    
+    def cancelReservation(self, reservation_id, user_id):
+        for r in self.reservations:
+            if r.id == reservation_id:
+                if r.user.id != user_id:
+                    return False, "NOT OWNER"
+                r.status = "CANCELLED"
+
+                if r in r.book.reservations:
+                    r.book.reservations.remove(r)
+                return True, "CANCELLED"
+
+        return False, "NOT FOUND"
+
+    def getReservationQueue(self, isbn):
+        success, book = self.validate_book(isbn)
+        if not success:
+            return False, book
+
+        queue = []
+        position = 1
+        for r in book.reservations:
+            queue.append({
+                "position": position,
+                "reservation_id": r.id,
+                "user": r.user.name,
+                "status": r.status
+            })
+            position += 1
+
+        return True, queue

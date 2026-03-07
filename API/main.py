@@ -263,6 +263,75 @@ def return_book(lending_id: str):
 
     return result
 
+# ---------------- RESERVE BOOK ----------------
+
+@app.post("/reserve")
+def reserve_book(user_id: str, isbn: str):
+
+    success, result = library.reserveBook(user_id, isbn)
+
+    if not success:
+        return {"error": result}
+
+    return {
+        "message": "RESERVED",
+        "reservation_id": result.id,
+        "book": result.book.title,
+        "status": result.status
+    }
+
+# ---------------- CANCEL RESERVATION ----------------
+
+@app.post("/cancel_reservation")
+def cancel_reservation(user_id: str, reservation_id: str):
+
+    success, result = library.cancelReservation(reservation_id, user_id)
+
+    if not success:
+        return {"error": result}
+
+    return {
+        "message": result
+    }
+
+
+# ---------------- RESERVATIONS ----------------
+
+@app.get("/my_reservations/{user_id}")
+def my_reservations(user_id: str):
+
+    result = []
+
+    for r in library.reservations:
+
+        if r.user.id == user_id:
+
+            result.append({
+                "reservation_id": r.id,
+                "book": r.book.title,
+                "isbn": r.book.isbn,
+                "status": r.status,
+                "reserved_at": str(r.reservationDate),
+                "expire_at": str(r.expireDate) if r.expireDate else None
+            })
+
+    return result
+
+@app.get("/reservation/queue/{isbn}")
+def get_reservation_queue(isbn: str):
+
+    success, result = library.getReservationQueue(isbn)
+
+    if not success:
+        return {
+            "success": False,
+            "message": result
+        }
+
+    return {
+        "success": True,
+        "queue": result
+    }
 
 if __name__ == "__main__":
     uvicorn.run("API.main:app", host="127.0.0.1", port=8000, reload=True)

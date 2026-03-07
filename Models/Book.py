@@ -15,6 +15,7 @@ class Book:
         self.price = price
         self.booktype = booktype
         self.bookitems = []
+        self.reservations = []
 
     def getBookType(self):
         return self.booktype
