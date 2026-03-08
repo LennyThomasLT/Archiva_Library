@@ -3,6 +3,8 @@ import uvicorn
 
 from Service.Library import Library
 from Models.Book import BookType
+from datetime import datetime
+from Models.TimeSlot import TimeSlot
 
 app = FastAPI()
 
@@ -83,18 +85,12 @@ library.place_book_in_rack(worker.id, "BC001", 1, "A")
 library.place_book_in_rack(worker.id, "BC002", 1, "A")
 library.place_book_in_rack(worker.id, "BC003", 1, "A")
 library.place_book_in_rack(worker.id, "BC004", 1, "A")
-    
 
-@app.get("/debug/users")
-def debug_users():
-    return [
-        {
-            "id": u.id,
-            "name": u.name,
-            "role": u.getRole()
-        }
-        for u in library.users
-    ]
+#--------- Add Room ----------
+
+library.add_room(worker.id, "R001", "ECC-811", 20)
+library.add_room(worker.id, "R002", "ECC-812", 50)
+library.add_room(worker.id, "R003", "ECC-813", 100)
 
 # ---------------- REGISTER ----------------
 
@@ -317,21 +313,74 @@ def my_reservations(user_id: str):
 
     return result
 
-@app.get("/reservation/queue/{isbn}")
+@app.get("/reservations/queue/{isbn}")
 def get_reservation_queue(isbn: str):
 
-    success, result = library.getReservationQueue(isbn)
+    success, queue = library.getReservationQueue(isbn)
 
     if not success:
-        return {
-            "success": False,
-            "message": result
-        }
+        raise HTTPException(status_code=404, detail=queue)
+
+    return {
+        "isbn": isbn,
+        "queue": queue
+    }
+
+@app.post("/rooms/add")
+def add_room(user_id: str, room_id: str, name: str, capacity: int):
+
+    success, result = library.add_room(user_id, room_id, name, capacity)
+
+    if not success:
+        return {"success": False, "message": result}
 
     return {
         "success": True,
-        "queue": result
+        "data": {
+            "room_id": result.room_id,
+            "name": result.name,
+            "capacity": result.capacity
+        }
     }
+
+@app.post("/rooms/reserve")
+def reserve_room(user_id: str, room_id: str, reserve_date: str, slot_time: str, people: int):
+    fmt = "%Y-%m-%d"
+    start_dt = datetime.strptime(reserve_date, fmt)
+
+    success, result = library.requestRoomReservation(
+        user_id,
+        room_id,
+        start_dt,
+        slot_time,
+        people
+    )
+
+    if not success:
+        return {"success": False, "message": result}
+
+    return {
+        "success": True,
+        "data": result.to_dict()
+    }
+
+@app.post("/rooms/cancel")
+def cancel_room_reservation(reservation_id: str, user_id: str):
+
+    success, result = library.cancelRoomReservation(reservation_id, user_id)
+
+    if not success:
+        return {"success": False, "message": result}
+
+    return {
+        "success": True,
+        "message": result
+    }
+
+@app.get("/rooms/reservations")
+def get_room_reservations():
+
+    return [r.to_dict() for r in library.room_reservations]
 
 if __name__ == "__main__":
     uvicorn.run("API.main:app", host="127.0.0.1", port=8000, reload=True)

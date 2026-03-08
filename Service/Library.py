@@ -4,8 +4,11 @@ from Models.Book import BookType, Book
 from Models.BookLending import BookLending
 from Models.BookRack import BookRack
 from Models.SearchResult import SearchResult
-from Models.User import Member, NormalUser, Worker, SystemAdmin
+from Models.User import Member, NormalUser, Worker, SystemAdmin, Staff
 from Models.BookReservation import BookReservation, ReservationStatus
+from Models.Room import Room
+from Models.RoomReservation import RoomReservation
+from Models.TimeSlot import TimeSlot
 
 
 class Library:
@@ -15,7 +18,10 @@ class Library:
         self.racks = []
         self.users = []
         self.lendings = []
-        self.reservations = []
+        self.bookreservations = []
+        self.rooms = []
+        self.room_reservations = []
+        
 
     # ---------------- VALIDATION ----------------
 
@@ -406,26 +412,18 @@ class Library:
 
     def countActiveReservations(self, user):
         count = 0
-
-        for r in self.reservations:
+        for r in self.bookreservations:
             if r.user == user and r.status in ["WAITING", "READY"]:
                 count += 1
 
         return count
     
     def expireReservations(self, book):
-        if not book.reservations:
-            return
-
-        first = book.reservations[0]
-
-        if first.is_expired():
-            first.status = "EXPIRED"
-            book.reservations.pop(0)
-
+        while book.reservations and book.reservations[0].is_expired():
+            expired = book.reservations.pop(0)
+            expired.status = "EXPIRED"
             if book.reservations:
-                next_res = book.reservations[0]
-                next_res.mark_ready()
+                book.reservations[0].mark_ready()
 
     def reserveBook(self, user_id, isbn):
         success, user = self.validate_user(user_id)
@@ -449,19 +447,16 @@ class Library:
             if r.user == user and r.status in ["WAITING", "READY"]:
                 return False, "ALREADY RESERVED"
 
-        running = len(self.reservations) + 1
-        rid = f"RES{running:04d}"
-
+        rid = f"BR{len(self.bookreservations)+1:04d}"
         reservation = BookReservation(rid, user, book)
-        book.reservations.append(reservation)
-        self.reservations.append(reservation)
 
-        print("ACTIVE RES:", self.countActiveReservations(user))
+        book.reservations.append(reservation)
+        self.bookreservations.append(reservation)
 
         return True, reservation
-    
+
     def cancelReservation(self, reservation_id, user_id):
-        for r in self.reservations:
+        for r in self.bookreservations:
             if r.id == reservation_id:
                 if r.user.id != user_id:
                     return False, "NOT OWNER"
@@ -490,3 +485,103 @@ class Library:
             position += 1
 
         return True, queue
+    
+#----------------RoomReservation-----------------
+
+    def add_room(self, user_id, room_id, name, capacity):
+        success, user = self.validate_user(user_id)
+        if not success:
+            return False, user
+
+        if not isinstance(user, Staff):
+            return False, "ONLY STAFF CAN ADD ROOM"
+
+        for r in self.rooms:
+            if r.room_id == room_id:
+                return False, "ROOM ALREADY EXISTS"
+
+        room = Room(room_id, name, capacity)
+        self.rooms.append(room)
+
+        return True, room
+    
+    def find_room(self, room_id):
+        for r in self.rooms:
+            if r.room_id == room_id:
+                return True, r
+
+        return False, "ROOM NOT FOUND"
+    
+    def requestRoomReservation(self, user_id, room_id, reserve_date, slot_time, people):
+        success, user = self.validate_user(user_id)
+        if not success:
+            return False, user
+
+        if not isinstance(user, Member):
+            return False, "MEMBER ONLY"
+
+        success, room = self.find_room(room_id)
+        if not success:
+            return False, room
+        
+        slot_id = TimeSlot.get_slot_id(slot_time)
+        if slot_id is None:
+            return False, "INVALID SLOT TIME"
+
+        if room.over_capacity(people):
+            return False, "ROOM CAPACITY NOT ENOUGH"
+
+        now = datetime.now()
+        today = now.date()
+        reserve_day = reserve_date.date()
+
+        if reserve_day < today:
+            return False, "CANNOT RESERVE IN THE PAST"
+
+        if reserve_day > today + timedelta(days=7):
+            return False, "CAN BOOK ONLY WITHIN 7 DAYS"
+
+        if reserve_day == today:
+            slot_time = TimeSlot.SLOT_TIMES[slot_id]
+            start_hour = int(slot_time.split("-")[0].split(".")[0])
+
+            if start_hour <= now.hour:
+                return False, "TIMESLOT ALREADY PASSED"
+
+        for r in self.room_reservations:
+            if r.user == user and r.date == reserve_date and r.timeslot.slot_id == slot_id:
+                return False, "USER ALREADY RESERVED THIS SLOT"
+            
+        count = 0
+        for r in self.room_reservations:
+            if r.user == user and r.date.date() == reserve_day:
+                count += 1
+        if count >= 5:
+            return False, "MAX 5 RESERVATIONS PER DAY"
+        
+        timeslot = room.reserve_timeslot(reserve_date, slot_id)
+        if not timeslot:
+            return False, "SLOT ALREADY RESERVED"
+
+        rid = f"RR{len(self.room_reservations)+1:04d}"
+
+        reservation = RoomReservation(rid, user, room, reserve_date, timeslot)
+        self.room_reservations.append(reservation)
+
+        return True, reservation
+        
+    def cancelRoomReservation(self, reservation_id, user_id):
+        success, user = self.validate_user(user_id)
+        if not success:
+            return False, user
+
+        for r in self.room_reservations:
+            if r.id == reservation_id:
+                if r.user.id != user_id:
+                    return False, "NOT OWNER"
+                
+                r.room.remove_timeslot(r.timeslot)
+                self.room_reservations.remove(r)
+                return True, "CANCEL SUCCESS"
+
+        return False, "RESERVATION NOT FOUND"
