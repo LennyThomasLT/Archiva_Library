@@ -9,6 +9,9 @@ from Models.BookReservation import BookReservation, ReservationStatus
 from Models.Room import Room
 from Models.RoomReservation import RoomReservation
 from Models.TimeSlot import TimeSlot
+from Models.Payment import Payment
+from Models.PaymentGateway import PaymentGateway
+from Models.PaymentMethod import CashPayment, QRPayment, CreditCardPayment
 
 
 class Library:
@@ -21,8 +24,9 @@ class Library:
         self.bookreservations = []
         self.rooms = []
         self.room_reservations = []
+        self.payments = []
+        self.gateway = PaymentGateway()
         
-
     # ---------------- VALIDATION ----------------
 
     def validate_user(self, user_id):
@@ -88,6 +92,8 @@ class Library:
 
         for user in self.users:
             if user.username == username and user.password == password:
+                if user.deleted:
+                    return None
                 return user
 
         return None
@@ -215,6 +221,22 @@ class Library:
         self.racks.append(rack)
 
         return True, rack
+    
+    def deleteRack(self, staff_id, floor, row):
+        success, staff = self.validate_staff(staff_id)
+        if not success:
+            return False, staff
+
+        success, rack = self.validate_rack(floor, row)
+        if not success:
+            return False, rack
+
+        for item in rack.items:
+            item.rack = None
+
+        self.racks.remove(rack)
+
+        return True, "RACK DELETED"
 
     def place_book_in_rack(self, worker_id, barcode, floor, row):
         success, worker = self.validate_staff(worker_id)
@@ -236,6 +258,44 @@ class Library:
         rack.add_item(item)
 
         return True, "BOOK PLACED"
+    
+    def deleteBook(self, staff_id, isbn):
+        success, staff = self.validate_staff(staff_id)
+        if not success:
+            return False, staff
+
+        success, book = self.validate_book(isbn)
+        if not success:
+            return False, book
+
+        if book.deleted:
+            return False, "BOOK ALREADY DELETED"
+
+        book.deleted = True
+        for item in book.bookitems:
+            item.deleted = True
+
+        return True, "BOOK DELETED"
+    
+    # -----------------SHOW BOOK---------------
+
+    def getAvailableBooks(self):
+        results = []
+        for book in self.books:
+            if book.deleted:
+                continue
+
+            available = book.getAvailableAmount()
+            if available > 0:
+                location = self.find_location(book)
+                results.append({
+                    "isbn": book.isbn,
+                    "title": book.title,
+                    "available": available,
+                    "location": location
+                })
+
+        return results
 
     # ---------------- SEARCH ----------------
 
@@ -260,6 +320,8 @@ class Library:
                 or k in book.author.lower()
                 or k in book.isbn.lower()
             ):
+                if book.deleted:
+                    continue
                 matched_books.append(book)
 
         results = []
@@ -275,6 +337,43 @@ class Library:
 
         return results
 
+    #-----------------PAYMENT---------------
+
+    def processPayment(self, user, price, payment_type, payment_data):
+        if payment_type == "cash":
+            payment_method = CashPayment()
+
+        elif payment_type == "qr":
+            payment_method = QRPayment()
+
+        elif payment_type == "credit":
+
+            if not payment_data:
+                return False, "CARD INFO REQUIRED", None
+
+            card_number = payment_data.get("card_number")
+            holder = payment_data.get("holder")
+            expiry = payment_data.get("expiry")
+            cvv = payment_data.get("cvv")
+
+            payment_method = CreditCardPayment(
+                card_number,
+                holder,
+                expiry,
+                cvv
+            )
+
+        else:
+            return False, "INVALID PAYMENT METHOD", None
+
+        success, message = payment_method.pay(self.gateway, price)
+
+        if not success:
+            return False, message, payment_method
+
+        return True, "SUCCESS", payment_method
+
+
     # ---------------- BORROW ----------------
 
     def countBorrowedBooks(self, user):
@@ -287,7 +386,7 @@ class Library:
 
         return count
 
-    def requestBorrow(self, user_id, isbn):
+    def requestBorrow(self, user_id, isbn, payment_type, payment_data=None):
         success, user = self.validate_user(user_id)
         if not success:
             return False, user
@@ -303,9 +402,16 @@ class Library:
         if book.getBookType() == BookType.PREMIUM and isinstance(user, NormalUser):
             return False, "MEMBER ONLY"
 
+        if book.deleted:
+            return False, "BOOK REMOVED"
+
+        # ---------------- RESERVATION CHECK ----------------
+
         self.expireReservations(book)
+
         if book.reservations:
             first = book.reservations[0]
+
             if first.user != user:
                 return False, "BOOK RESERVED"
 
@@ -314,13 +420,32 @@ class Library:
                 if not item:
                     return False, "BOOK NOT READY"
 
+                price = item.book.price * (1 - user.getDiscount())
+
+                # -------- PAYMENT --------
+                success, message, payment_method = self.processPayment(
+                    user, price, payment_type, payment_data
+                )
+
+                if not success:
+                    return False, message
+
                 lending = self.createLending(user, item)
+                lending.payment_status = "PAID"
+
+                # create payment record
+                pid = f"PAY{len(self.payments)+1:04d}"
+                payment = Payment(pid, user, price, payment_method, [lending], "SUCCESS")
+                self.payments.append(payment)
                 first.status = "FULFILLED"
                 book.reservations.pop(0)
+
                 return True, lending
-            
+
             else:
                 return False, "WAIT YOUR TURN"
+
+        # ---------------- NORMAL BORROW ----------------
 
         item = book.getAvailableItem()
         if not item:
@@ -329,12 +454,30 @@ class Library:
         if self.countBorrowedBooks(user) >= user.borrowLimit():
             return False, "LIMIT REACHED"
 
-        return True, self.createLending(user, item)
+        price = item.book.price * (1 - user.getDiscount())
+
+        # -------- PAYMENT --------
+        success, message, payment_method = self.processPayment(
+            user, price, payment_type, payment_data
+        )
+
+        if not success:
+            return False, message
+
+        lending = self.createLending(user, item)
+        lending.payment_status = "PAID"
+
+        # -------- PAYMENT RECORD --------
+
+        pid = f"PAY{len(self.payments)+1:04d}"
+        payment = Payment(pid, user, price, payment_method, [lending], "SUCCESS")
+        self.payments.append(payment)
+
+        return True, lending
 
     # ---------------- CREATE LENDING ----------------
 
     def createLending(self, user, item):
-
         issueDate = datetime.now()
 
         if isinstance(user, NormalUser):
@@ -376,6 +519,7 @@ class Library:
 
         user = lending.user
         fine = lending.calculateFine()
+        lending.fine_amount = fine
         if fine > 0 and isinstance(user, Member):
             self.applyPenalty(user, fine)
 
@@ -512,6 +656,19 @@ class Library:
 
         return False, "ROOM NOT FOUND"
     
+    def deleteRoom(self, staff_id, room_id):
+        success, staff = self.validate_staff(staff_id)
+        if not success:
+            return False, staff
+
+        success, room = self.find_room(room_id)
+        if not success:
+            return False, room
+
+        room.deleted = True
+
+        return True, "ROOM DELETED"
+    
     def requestRoomReservation(self, user_id, room_id, reserve_date, slot_time, people):
         success, user = self.validate_user(user_id)
         if not success:
@@ -524,6 +681,9 @@ class Library:
         if not success:
             return False, room
         
+        if room.deleted:
+            return False, "ROOM REMOVED"
+
         slot_id = TimeSlot.get_slot_id(slot_time)
         if slot_id is None:
             return False, "INVALID SLOT TIME"
@@ -585,3 +745,59 @@ class Library:
                 return True, "CANCEL SUCCESS"
 
         return False, "RESERVATION NOT FOUND"
+    
+    #---------------------DELETE USER-----------------------
+
+    def deleteUser(self, admin_id, user_id):
+        success, admin = self.validate_admin(admin_id)
+        if not success:
+            return False, admin
+
+        success, user = self.validate_user(user_id)
+        if not success:
+            return False, user
+
+        if user.deleted:
+            return False, "USER ALREADY DELETED"
+
+        for l in self.lendings:
+            if l.user == user and l.status == "BORROWED":
+                return False, "USER STILL BORROWING"
+
+        user.deleted = True
+
+        return True, "USER DELETED"
+    
+    #---------------------Pay Fine----------------------
+    
+    def payFine(self, lending_id, payment_type, payment_data=None):
+        lending = self.findLending(lending_id)
+        if not lending:
+            return False, "LENDING NOT FOUND"
+
+        if lending.fine_status == "PAID":
+            return False, "FINE ALREADY PAID"
+
+        fine = lending.fine_amount
+        if fine <= 0:
+            lending.fine_status = "PAID"
+            return False, "NO FINE"
+
+        # -------- PAYMENT --------
+        success, message, payment_method = self.processPayment(
+            lending.user, fine, payment_type, payment_data
+        )
+
+        pid = f"PAY{len(self.payments)+1:04d}"
+
+        if not success:
+            payment = Payment(pid, lending.user, fine, payment_method, [lending], "FAILED")
+            self.payments.append(payment)
+            return False, message
+
+        lending.fine_status = "PAID"
+
+        payment = Payment(pid, lending.user, fine, payment_method, [lending], "SUCCESS")
+        self.payments.append(payment)
+
+        return True, payment

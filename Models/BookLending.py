@@ -11,6 +11,9 @@ class BookLending:
         self.dueDate = dueDate
         self.returnDate = returnDate
         self.status = status
+        self.payment_status = "UNPAID"
+        self.fine_status = "UNPAID"
+        self.fine_amount = 0 
 
     def calculateFine(self):
         if datetime.now() > self.dueDate:
@@ -28,6 +31,8 @@ class BookLending:
             "dueDate": str(self.dueDate),
             "returnDate": str(self.returnDate),
             "status": self.status,
-            "fine": fine,
+            "payment_status": self.payment_status,
+            "fine_status": self.fine_status,
+            "fine": self.fine_amount,
             "member_score": self.user.score if isinstance(self.user, Member) else None
         }

@@ -5,6 +5,7 @@ from Service.Library import Library
 from Models.Book import BookType
 from datetime import datetime
 from Models.TimeSlot import TimeSlot
+from Models.BookLending import BookLending
 
 app = FastAPI()
 
@@ -92,6 +93,33 @@ library.add_room(worker.id, "R001", "ECC-811", 20)
 library.add_room(worker.id, "R002", "ECC-812", 50)
 library.add_room(worker.id, "R003", "ECC-813", 100)
 
+#---------------- LENDING -------------------
+
+# l1 = BookLending(
+#     "LEN2026001",
+#     m1,
+#     b1.bookitems[0],
+#     90,
+#     datetime(2026,3,1),
+#     datetime(2026,3,3),
+#     None,
+#     "BORROWED"
+# )
+
+# l2 = BookLending(
+#     "LEN2026002",
+#     n1,
+#     b2.bookitems[0],
+#     120,
+#     datetime(2026,3,5),
+#     datetime(2026,3,6),
+#     None,
+#     "BORROWED"
+# )
+
+# library.lendings.append(l1)
+# library.lendings.append(l2)
+
 # ---------------- REGISTER ----------------
 
 @app.post("/register")
@@ -175,6 +203,20 @@ def add_book_item(worker_id: str, isbn: str, barcode: str):
 
     return {"message": "BOOK ITEM ADDED"}
 
+#----------------DELETE BOOK----------------
+
+@app.delete("/books/{isbn}")
+def delete_book(worker_id: str, isbn: str):
+
+    success, result = library.deleteBook(worker_id, isbn)
+
+    if not success:
+        return {"error": result}
+
+    return {
+        "message": "BOOK REMOVED",
+        "isbn": isbn
+    }
 
 # ---------------- ADD RACK ----------------
 
@@ -200,6 +242,11 @@ def place_book(worker_id: str, barcode: str, floor: int, row: str):
 
     return {"message": result}
 
+# ---------------- SHOW BOOK ----------------
+
+@app.get("/books/available")
+def available_books():
+    return library.getAvailableBooks()
 
 # ---------------- SEARCH ----------------
 
@@ -217,9 +264,28 @@ def search(keyword: str):
 # ---------------- BORROW ----------------
 
 @app.post("/borrow")
-def borrow(user_id: str, isbn: str):
+def borrow(user_id: str, isbn: str, payment: str,
+           card_number: str = None,
+           holder: str = None,
+           expiry: str = None,
+           cvv: str = None):
 
-    success, result = library.requestBorrow(user_id, isbn)
+    payment_data = None
+
+    if payment == "credit":
+        payment_data = {
+            "card_number": card_number,
+            "holder": holder,
+            "expiry": expiry,
+            "cvv": cvv
+        }
+
+    success, result = library.requestBorrow(
+        user_id,
+        isbn,
+        payment,
+        payment_data
+    )
 
     if not success:
         return {"error": result}
@@ -298,7 +364,7 @@ def my_reservations(user_id: str):
 
     result = []
 
-    for r in library.reservations:
+    for r in library.bookreservations:
 
         if r.user.id == user_id:
 
@@ -343,6 +409,19 @@ def add_room(user_id: str, room_id: str, name: str, capacity: int):
         }
     }
 
+@app.delete("/rooms/{room_id}")
+def delete_room(user_id: str, room_id: str):
+
+    success, result = library.deleteRoom(user_id, room_id)
+
+    if not success:
+        return {"success": False, "message": result}
+
+    return {
+        "success": True,
+        "message": "ROOM DELETED"
+    }
+
 @app.post("/rooms/reserve")
 def reserve_room(user_id: str, room_id: str, reserve_date: str, slot_time: str, people: int):
     fmt = "%Y-%m-%d"
@@ -378,9 +457,54 @@ def cancel_room_reservation(reservation_id: str, user_id: str):
     }
 
 @app.get("/rooms/reservations")
-def get_room_reservations():
+def get_reservations():
 
     return [r.to_dict() for r in library.room_reservations]
 
 if __name__ == "__main__":
     uvicorn.run("API.main:app", host="127.0.0.1", port=8000, reload=True)
+
+@app.delete("/delete_user/{user_id}")
+def delete_user(admin_id: str, user_id: str):
+
+    success, result = library.deleteUser(admin_id, user_id)
+
+    if not success:
+        return {"error": result}
+
+    return {
+        "message": "MEMBER REMOVED",
+        "user_id": user_id
+    }
+
+@app.post("/pay_fine")
+def pay_fine(lending_id: str,
+             payment: str,
+             card_number: str = None,
+             holder: str = None,
+             expiry: str = None,
+             cvv: str = None):
+
+    payment_data = None
+
+    if payment == "credit":
+        payment_data = {
+            "card_number": card_number,
+            "holder": holder,
+            "expiry": expiry,
+            "cvv": cvv
+        }
+
+    success, result = library.payFine(
+        lending_id,
+        payment,
+        payment_data
+    )
+
+    if not success:
+        return {"success": False, "message": result}
+
+    return {
+        "success": True,
+        "message": "FINE PAID"
+    }

@@ -4,6 +4,7 @@ class BookItem:
         self.book = book
         self.status = True
         self.rack = None
+        self.deleted = False
 
     def checkAvailable(self):
         return self.status

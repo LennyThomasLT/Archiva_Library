@@ -16,6 +16,7 @@ class Book:
         self.booktype = booktype
         self.bookitems = []
         self.reservations = []
+        self.deleted = False
 
     def getBookType(self):
         return self.booktype
@@ -27,13 +28,13 @@ class Book:
 
     def getAvailableItem(self):
         for item in self.bookitems:
-            if item.checkAvailable():
+            if item.checkAvailable() and not item.deleted:
                 return item
         return None
 
     def getAvailableAmount(self):
         count = 0
         for item in self.bookitems:
-            if item.checkAvailable():
+            if item.checkAvailable() and not item.deleted:
                 count += 1
         return count

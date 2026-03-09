@@ -4,6 +4,7 @@ class User:
         self.name = name
         self.username = username
         self.password = password
+        self.deleted = False
 
     def borrowLimit(self):
         raise NotImplementedError()

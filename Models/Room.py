@@ -7,6 +7,7 @@ class Room:
         self.name = name
         self.capacity = capacity
         self.timeslots = []
+        self.deleted = False
 
     def over_capacity(self, people):
         return people > self.capacity
