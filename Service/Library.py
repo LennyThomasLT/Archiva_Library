@@ -32,7 +32,7 @@ class Library:
     def validate_user(self, user_id):
 
         for user in self.users:
-            if user.id == user_id:
+            if user.id == user_id and not user.deleted:
                 return True, user
 
         return False, "USER NOT FOUND"
@@ -64,7 +64,7 @@ class Library:
     def validate_book(self, isbn):
 
         for book in self.books:
-            if book.isbn == isbn:
+            if book.isbn == isbn and not book.deleted:
                 return True, book
 
         return False, "BOOK NOT FOUND"
@@ -72,8 +72,8 @@ class Library:
     def validate_book_item(self, barcode):
 
         for book in self.books:
-            for item in book.bookitems:
-                if item.barcode == barcode:
+            for item in book.bookitems :
+                if item.barcode == barcode and not item.deleted and not book.deleted:
                     return True, item
 
         return False, "BOOK ITEM NOT FOUND"
@@ -105,7 +105,7 @@ class Library:
             if user.username == username:
                 return False, "USERNAME EXISTS"
 
-        running = len(self.users) + 1
+        running = len([u for u in self.users if not u.deleted]) + 1
         new_id = f"6801{running:04d}"
 
         user = NormalUser(new_id, name, username, password)
@@ -144,18 +144,17 @@ class Library:
 
     # ---------------- CREATE STAFF ----------------
 
-    def create_staff(self, admin_id, name, username, password, role="worker"):
+    def create_staff(self, name, username, password, role="worker", admin_id=None):
+        if admin_id:
+            success, admin = self.validate_admin(admin_id)
+            if not success:
+                return False, admin
+        
+        for user in self.users:
+            if user.username == username:
+                return False, "USERNAME EXISTS"
 
-        success, admin = self.validate_admin(admin_id)
-
-        if not success:
-            return False, admin
-
-        return True, self._create_staff(name, username, password, role)
-
-    def _create_staff(self, name, username, password, role="worker"):
-
-        running = len(self.users) + 1
+        running = len([u for u in self.users if not u.deleted]) + 1
         user_id = f"6801{running:04d}"
         staff_id = f"S{running:03d}"
 
@@ -166,28 +165,34 @@ class Library:
 
         self.users.append(staff)
 
-        return staff
+        return True, staff
 
     # ---------------- BOOK MANAGEMENT ----------------
 
-    def add_book(self, worker_id, isbn, title, author, price, book_type):
-        success, worker = self.validate_staff(worker_id)
+    def add_book(self, user_id, isbn, title, author, price, book_type):
+        success, worker = self.validate_staff(user_id)
         if not success:
             return False, worker
-        
+
         for b in self.books:
-            if b.isbn == isbn:
+            if b.isbn == isbn and not b.deleted:
                 return False, "BOOK ALREADY EXISTS"
+            if b.isbn == isbn and b.deleted:
+                b.deleted = False
+                b.title = title
+                b.author = author
+                b.price = price
+                b.bookType = book_type
+                return True, b
 
         book = Book(isbn, title, author, price, book_type)
-
         self.books.append(book)
 
         return True, book
 
-    def add_book_item(self, worker_id, isbn, barcode):
+    def add_book_item(self, user_id, isbn, barcode):
 
-        success, worker = self.validate_staff(worker_id)
+        success, worker = self.validate_staff(user_id)
         if not success:
             return False, worker
 
@@ -195,18 +200,22 @@ class Library:
         if not success:
             return False, book
 
-        # เช็ค barcode ซ้ำ
         for b in self.books:
             for item in b.bookitems:
                 if item.barcode == barcode:
+                    if item.deleted:
+                        item.deleted = False
+                        item.book = book
+                        return True, item
+
                     return False, "BARCODE EXISTS"
 
         item = book.addBookItem(barcode)
 
         return True, item
 
-    def add_rack(self, worker_id, floor, row):
-        success, worker = self.validate_staff(worker_id)
+    def add_rack(self, user_id, floor, row):
+        success, worker = self.validate_staff(user_id)
         if not success:
             return False, worker
 
@@ -234,16 +243,19 @@ class Library:
         for item in rack.items:
             item.rack = None
 
+        rack.items.clear()
         self.racks.remove(rack)
 
         return True, "RACK DELETED"
 
-    def place_book_in_rack(self, worker_id, barcode, floor, row):
-        success, worker = self.validate_staff(worker_id)
+    def place_book_in_rack(self, user_id, barcode, floor, row):
+        success, worker = self.validate_staff(user_id)
         if not success:
             return False, worker
 
         success, item = self.validate_book_item(barcode)
+        if item.deleted:
+            return False, "BOOK ITEM REMOVED"
         if not success:
             return False, item
 
@@ -604,10 +616,15 @@ class Library:
             if r.id == reservation_id:
                 if r.user.id != user_id:
                     return False, "NOT OWNER"
-                r.status = "CANCELLED"
 
+                r.status = "CANCELLED"
                 if r in r.book.reservations:
                     r.book.reservations.remove(r)
+                    if r.book.reservations:
+                        first = r.book.reservations[0]
+                        if first.status == "WAITING":
+                            first.mark_ready()
+
                 return True, "CANCELLED"
 
         return False, "NOT FOUND"
@@ -640,8 +657,16 @@ class Library:
         if not isinstance(user, Staff):
             return False, "ONLY STAFF CAN ADD ROOM"
 
-        for r in self.rooms:
-            if r.room_id == room_id:
+        for room in self.rooms:
+            if room.room_id == room_id:
+
+                if room.deleted:
+                    room.deleted = False
+                    room.name = name
+                    room.capacity = capacity
+                    room.clear_timeslots()
+                    return True, room
+
                 return False, "ROOM ALREADY EXISTS"
 
         room = Room(room_id, name, capacity)
@@ -650,11 +675,25 @@ class Library:
         return True, room
     
     def find_room(self, room_id):
-        for r in self.rooms:
-            if r.room_id == room_id:
-                return True, r
+        for room in self.rooms:
+            if room.room_id == room_id and not room.deleted:
+                return True, room
 
         return False, "ROOM NOT FOUND"
+
+    def getRooms(self):
+        results = []
+        for room in self.rooms:
+            if room.deleted:
+                continue
+
+            results.append({
+                "room_id": room.room_id,
+                "name": room.name,
+                "capacity": room.capacity
+            })
+
+        return results
     
     def deleteRoom(self, staff_id, room_id):
         success, staff = self.validate_staff(staff_id)
@@ -666,6 +705,7 @@ class Library:
             return False, room
 
         room.deleted = True
+        room.clear_timeslots()
 
         return True, "ROOM DELETED"
     

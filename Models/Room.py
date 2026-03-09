@@ -9,6 +9,9 @@ class Room:
         self.timeslots = []
         self.deleted = False
 
+    def clear_timeslots(self):
+        self.timeslots.clear()
+
     def over_capacity(self, people):
         return people > self.capacity
 

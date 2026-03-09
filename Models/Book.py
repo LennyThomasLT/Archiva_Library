@@ -28,7 +28,7 @@ class Book:
 
     def getAvailableItem(self):
         for item in self.bookitems:
-            if item.checkAvailable() and not item.deleted:
+            if item.checkAvailable() and not item.deleted and item.rack is not None:
                 return item
         return None
 

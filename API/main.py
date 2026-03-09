@@ -24,8 +24,8 @@ success, m2 = library.upgrade_member(u2.id)
 success, n1 = library.register_user("Charlie", "charlie", "1234") #68010003
 success, n2 = library.register_user("David", "david", "1234") #68010004
 
-admin = library._create_staff("Admin", "admin", "admin123", "admin") #68010005
-worker = library._create_staff("Worker", "worker", "worker123", "worker") #68010006
+success, admin = library.create_staff("Admin", "admin", "admin123", "admin") #68010005
+success, worker = library.create_staff("Worker", "worker", "worker123", "worker") #68010006
 
 
 # -------- BOOKS --------

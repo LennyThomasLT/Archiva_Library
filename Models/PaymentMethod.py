@@ -7,11 +7,8 @@ class CashPayment(PaymentMethod):
         return gateway.process_cash(amount)
     
 class QRPayment(PaymentMethod):
-    def __init__(self, qr_code):
-        self.qr_code = qr_code
-
     def pay(self, gateway, amount):
-        return gateway.process_qr(self.qr_code, amount)
+        return gateway.process_cash(amount)
     
 class CreditCardPayment(PaymentMethod):
     def __init__(self, card_number, holder, expiry, cvv):
