@@ -97,6 +97,15 @@ class Library:
                 return user
 
         return None
+    
+    # ---------------- LOGOUT ----------------
+
+    def logout(self, user_id):
+        for user in self.users:
+            if user.id == user_id:
+                return True, f"User {user.username} logged out successfully"
+
+        return False, "USER NOT FOUND"
 
     # ---------------- REGISTER ----------------
 
@@ -173,6 +182,12 @@ class Library:
         success, worker = self.validate_staff(user_id)
         if not success:
             return False, worker
+        
+        if isinstance(book_type, str):
+            try:
+                book_type = BookType[book_type.upper()]
+            except KeyError:
+                return False, "INVALID BOOK TYPE"
 
         for b in self.books:
             if b.isbn == isbn and not b.deleted:
@@ -182,7 +197,7 @@ class Library:
                 b.title = title
                 b.author = author
                 b.price = price
-                b.bookType = book_type
+                b.booktype = book_type
                 return True, b
 
         book = Book(isbn, title, author, price, book_type)
@@ -254,10 +269,11 @@ class Library:
             return False, worker
 
         success, item = self.validate_book_item(barcode)
-        if item.deleted:
-            return False, "BOOK ITEM REMOVED"
         if not success:
             return False, item
+        
+        if item.deleted:
+            return False, "BOOK ITEM REMOVED"
 
         success, rack = self.validate_rack(floor, row)
         if not success:
@@ -411,30 +427,32 @@ class Library:
             if user.getScore() <= 0:
                 return False, "MEMBER BANNED"
 
-        if book.getBookType() == BookType.PREMIUM and isinstance(user, NormalUser):
+        if book.booktype == BookType.PREMIUM and isinstance(user, NormalUser):
             return False, "MEMBER ONLY"
 
         if book.deleted:
             return False, "BOOK REMOVED"
 
-        # ---------------- RESERVATION CHECK ----------------
+       # ---------------- RESERVATION CHECK ----------------
 
         self.expireReservations(book)
-
         if book.reservations:
             first = book.reservations[0]
-
             if first.user != user:
                 return False, "BOOK RESERVED"
+
+            if first.status == "WAITING":
+                return False, "WAIT YOUR TURN"
 
             if first.status == "READY":
                 item = book.getAvailableItem()
                 if not item:
                     return False, "BOOK NOT READY"
 
-                price = item.book.price * (1 - user.getDiscount())
+                full_price = item.book.price * (1 - user.getDiscount())
+                deposit = first.deposit_amount
+                price = full_price - deposit
 
-                # -------- PAYMENT --------
                 success, message, payment_method = self.processPayment(
                     user, price, payment_type, payment_data
                 )
@@ -445,10 +463,10 @@ class Library:
                 lending = self.createLending(user, item)
                 lending.payment_status = "PAID"
 
-                # create payment record
                 pid = f"PAY{len(self.payments)+1:04d}"
                 payment = Payment(pid, user, price, payment_method, [lending], "SUCCESS")
                 self.payments.append(payment)
+
                 first.status = "FULFILLED"
                 book.reservations.pop(0)
 
@@ -578,10 +596,16 @@ class Library:
         while book.reservations and book.reservations[0].is_expired():
             expired = book.reservations.pop(0)
             expired.status = "EXPIRED"
+
+            for r in self.bookreservations:
+                if r.id == expired.id:
+                    r.status = "EXPIRED"
+                    break
+
             if book.reservations:
                 book.reservations[0].mark_ready()
 
-    def reserveBook(self, user_id, isbn):
+    def reserveBook(self, user_id, isbn, payment_type, payment_data=None):
         success, user = self.validate_user(user_id)
         if not success:
             return False, user
@@ -596,18 +620,35 @@ class Library:
         if self.countActiveReservations(user) >= 5:
             return False, "RESERVATION LIMIT"
 
-        if book.getAvailableAmount() > 0:
+        self.expireReservations(book)
+
+        if book.getAvailableAmount() > len(book.reservations):
             return False, "BOOK AVAILABLE NO NEED RESERVE"
 
         for r in book.reservations:
             if r.user == user and r.status in ["WAITING", "READY"]:
                 return False, "ALREADY RESERVED"
 
+        deposit = book.price * 0.1
+
+        # -------- PAYMENT --------
+        success, message, payment_method = self.processPayment(
+            user, deposit, payment_type, payment_data
+        )
+
+        if not success:
+            return False, message
+
         rid = f"BR{len(self.bookreservations)+1:04d}"
         reservation = BookReservation(rid, user, book)
 
+        reservation.set_deposit(deposit)
+
         book.reservations.append(reservation)
         self.bookreservations.append(reservation)
+        pid = f"PAY{len(self.payments)+1:04d}"
+        payment = Payment(pid, user, deposit, payment_method, [reservation], "SUCCESS")
+        self.payments.append(payment)
 
         return True, reservation
 
@@ -649,7 +690,7 @@ class Library:
     
 #----------------RoomReservation-----------------
 
-    def add_room(self, user_id, room_id, name, capacity):
+    def add_room(self, user_id, room_id, name, capacity, price):
         success, user = self.validate_user(user_id)
         if not success:
             return False, user
@@ -669,7 +710,7 @@ class Library:
 
                 return False, "ROOM ALREADY EXISTS"
 
-        room = Room(room_id, name, capacity)
+        room = Room(room_id, name, capacity, price)
         self.rooms.append(room)
 
         return True, room
@@ -690,7 +731,8 @@ class Library:
             results.append({
                 "room_id": room.room_id,
                 "name": room.name,
-                "capacity": room.capacity
+                "capacity": room.capacity,
+                "price": room.price
             })
 
         return results
@@ -709,7 +751,13 @@ class Library:
 
         return True, "ROOM DELETED"
     
-    def requestRoomReservation(self, user_id, room_id, reserve_date, slot_time, people):
+    def requestRoomReservation(self, user_id, room_id, reserve_date, slot_time, people, payment_type, payment_data=None):
+        try:
+            if isinstance(reserve_date, str):
+                reserve_date = datetime.strptime(reserve_date, "%Y-%m-%d")
+        except:
+            return False, "INVALID DATE FORMAT"
+
         success, user = self.validate_user(user_id)
         if not success:
             return False, user
@@ -763,10 +811,31 @@ class Library:
         if not timeslot:
             return False, "SLOT ALREADY RESERVED"
 
-        rid = f"RR{len(self.room_reservations)+1:04d}"
+        price = room.price * (1 - user.getDiscount())
 
+        success, message, payment_method = self.processPayment(
+            user, price, payment_type, payment_data
+        )
+
+        if not success:
+            return False, message
+
+        rid = f"RR{len(self.room_reservations)+1:04d}"
         reservation = RoomReservation(rid, user, room, reserve_date, timeslot)
+        reservation.payment_status = "PAID"
         self.room_reservations.append(reservation)
+        pid = f"PAY{len(self.payments)+1:04d}"
+
+        payment = Payment(
+            pid,
+            user,
+            price,
+            payment_method,
+            [reservation],
+            "SUCCESS"
+        )
+
+        self.payments.append(payment)
 
         return True, reservation
         

@@ -9,21 +9,70 @@ class BookType(Enum):
 
 class Book:
     def __init__(self, isbn, title, author, price, booktype):
-        self.isbn = isbn
-        self.title = title
-        self.author = author
-        self.price = price
-        self.booktype = booktype
-        self.bookitems = []
-        self.reservations = []
-        self.deleted = False
+        self.__isbn = isbn
+        self.__title = title
+        self.__author = author
+        self.__price = price
+        self.__booktype = booktype
+        self.__bookitems = []
+        self.__reservations = []
+        self.__deleted = False
 
-    def getBookType(self):
-        return self.booktype
+    @property
+    def isbn(self):
+        return self.__isbn
+
+    @property
+    def title(self):
+        return self.__title
+    
+    @title.setter
+    def title(self, value):
+        self.__title = value
+    
+    @property
+    def author(self):
+        return self.__author
+    
+    @author.setter
+    def author(self, value):
+        self.__author = value
+
+    @property
+    def price(self):
+        return self.__price
+
+    @price.setter
+    def price(self, value):
+        self.__price = value
+
+    @property
+    def booktype(self):
+        return self.__booktype
+    
+    @booktype.setter
+    def booktype(self, value):
+        self.__booktype = value
+
+    @property
+    def bookitems(self):
+        return self.__bookitems
+
+    @property
+    def reservations(self):
+        return self.__reservations
+
+    @property
+    def deleted(self):
+        return self.__deleted
+
+    @deleted.setter
+    def deleted(self, value):
+        self.__deleted = value
 
     def addBookItem(self, barcode):
         item = BookItem(barcode, self)
-        self.bookitems.append(item)
+        self.__bookitems.append(item)
         return item
 
     def getAvailableItem(self):

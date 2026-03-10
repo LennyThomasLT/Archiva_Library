@@ -89,9 +89,9 @@ library.place_book_in_rack(worker.id, "BC004", 1, "A")
 
 #--------- Add Room ----------
 
-library.add_room(worker.id, "R001", "ECC-811", 20)
-library.add_room(worker.id, "R002", "ECC-812", 50)
-library.add_room(worker.id, "R003", "ECC-813", 100)
+library.add_room(worker.id, "R001", "ECC-811", 20, 100)
+library.add_room(worker.id, "R002", "ECC-812", 50, 150)
+library.add_room(worker.id, "R003", "ECC-813", 100, 200)
 
 #---------------- LENDING -------------------
 
@@ -174,15 +174,13 @@ def upgrade_member(user_id: str):
 @app.post("/books")
 def add_book(worker_id: str, isbn: str, title: str, author: str, price: float, book_type: str):
 
-    book_type_enum = BookType(book_type.upper())
-
     success, result = library.add_book(
         worker_id,
         isbn,
         title,
         author,
         price,
-        book_type_enum
+        book_type
     )
 
     if not success:
@@ -252,14 +250,11 @@ def available_books():
 
 @app.get("/books/search")
 def search(keyword: str):
-
     result = library.find_book(keyword)
-
     if not result:
-        raise HTTPException(404, "BOOK NOT FOUND")
+        return {"error": "BOOK NOT FOUND"}
 
     return result
-
 
 # ---------------- BORROW ----------------
 
@@ -328,9 +323,30 @@ def return_book(lending_id: str):
 # ---------------- RESERVE BOOK ----------------
 
 @app.post("/reserve")
-def reserve_book(user_id: str, isbn: str):
+def reserve_book(user_id: str,
+                 isbn: str,
+                 payment: str,
+                 card_number: str = None,
+                 holder: str = None,
+                 expiry: str = None,
+                 cvv: str = None):
 
-    success, result = library.reserveBook(user_id, isbn)
+    payment_data = None
+
+    if payment == "credit":
+        payment_data = {
+            "card_number": card_number,
+            "holder": holder,
+            "expiry": expiry,
+            "cvv": cvv
+        }
+
+    success, result = library.reserveBook(
+        user_id,
+        isbn,
+        payment,
+        payment_data
+    )
 
     if not success:
         return {"error": result}
@@ -339,7 +355,8 @@ def reserve_book(user_id: str, isbn: str):
         "message": "RESERVED",
         "reservation_id": result.id,
         "book": result.book.title,
-        "status": result.status
+        "status": result.status,
+        "deposit": result.deposit_amount
     }
 
 # ---------------- CANCEL RESERVATION ----------------
@@ -393,9 +410,9 @@ def get_reservation_queue(isbn: str):
     }
 
 @app.post("/rooms/add")
-def add_room(user_id: str, room_id: str, name: str, capacity: int):
+def add_room(user_id: str, room_id: str, name: str, capacity: int, price: int):
 
-    success, result = library.add_room(user_id, room_id, name, capacity)
+    success, result = library.add_room(user_id, room_id, name, capacity, price)
 
     if not success:
         return {"success": False, "message": result}
@@ -405,9 +422,14 @@ def add_room(user_id: str, room_id: str, name: str, capacity: int):
         "data": {
             "room_id": result.room_id,
             "name": result.name,
-            "capacity": result.capacity
+            "capacity": result.capacity,
+            "price": result.price
         }
     }
+
+@app.get("/rooms")
+def get_rooms():
+    return library.getRooms()
 
 @app.delete("/rooms/{room_id}")
 def delete_room(user_id: str, room_id: str):
@@ -423,16 +445,34 @@ def delete_room(user_id: str, room_id: str):
     }
 
 @app.post("/rooms/reserve")
-def reserve_room(user_id: str, room_id: str, reserve_date: str, slot_time: str, people: int):
-    fmt = "%Y-%m-%d"
-    start_dt = datetime.strptime(reserve_date, fmt)
+def reserve_room(user_id: str,
+                 room_id: str,
+                 reserve_date: str,
+                 slot_time: str,
+                 people: int,
+                 payment: str,
+                 card_number: str = None,
+                 holder: str = None,
+                 expiry: str = None,
+                 cvv: str = None):
+    payment_data = None
+
+    if payment == "credit":
+        payment_data = {
+            "card_number": card_number,
+            "holder": holder,
+            "expiry": expiry,
+            "cvv": cvv
+        }
 
     success, result = library.requestRoomReservation(
         user_id,
         room_id,
-        start_dt,
+        reserve_date,
         slot_time,
-        people
+        people,
+        payment,
+        payment_data
     )
 
     if not success:
@@ -460,9 +500,6 @@ def cancel_room_reservation(reservation_id: str, user_id: str):
 def get_reservations():
 
     return [r.to_dict() for r in library.room_reservations]
-
-if __name__ == "__main__":
-    uvicorn.run("API.main:app", host="127.0.0.1", port=8000, reload=True)
 
 @app.delete("/delete_user/{user_id}")
 def delete_user(admin_id: str, user_id: str):
@@ -508,3 +545,6 @@ def pay_fine(lending_id: str,
         "success": True,
         "message": "FINE PAID"
     }
+
+if __name__ == "__main__":
+    uvicorn.run("API.main:app", host="127.0.0.1", port=8000, reload=True)

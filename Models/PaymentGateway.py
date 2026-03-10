@@ -40,11 +40,8 @@ class PaymentGateway:
 
     # ---------------- QR ----------------
 
-    def process_qr(self, qr_code, amount):
-        if not qr_code:
-            return False, "INVALID QR"
-
-        return True, "QR PAYMENT SUCCESS"
+    def process_qr(self, amount):
+        return True, "PAYMENT SUCCESS"
 
     # ---------------- CASH ----------------
 

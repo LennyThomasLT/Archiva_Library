@@ -13,18 +13,39 @@ class TimeSlot:
     ]
 
     def __init__(self, slot_id, room, reserve_date):
-        self.slot_id = slot_id
-        self.room = room
-        self.reserve_date = reserve_date
-        self.time = TimeSlot.SLOT_TIMES[slot_id]
+        if slot_id < 0 or slot_id >= len(TimeSlot.SLOT_TIMES):
+            raise ValueError("INVALID SLOT ID")
+
+        self.__slot_id = slot_id
+        self.__room = room
+        self.__reserve_date = reserve_date
+        self.__time = TimeSlot.SLOT_TIMES[slot_id]
+
+    @property
+    def slot_id(self):
+        return self.__slot_id
+
+    @property
+    def room(self):
+        return self.__room
+
+    @property
+    def reserve_date(self):
+        return self.__reserve_date
+
+    @property
+    def time(self):
+        return self.__time
 
     @classmethod
     def get_slot_id(cls, slot_time):
         if not slot_time:
             return None
 
-        slot_time = slot_time.replace(":", ".").strip()
+        slot_time = slot_time.strip().replace(":", ".")
         start = slot_time.split("-")[0]
+        if "." not in start:
+            start = f"{start}.00"
 
         for i, t in enumerate(cls.SLOT_TIMES):
             if t.startswith(start):
