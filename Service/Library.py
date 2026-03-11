@@ -305,6 +305,32 @@ class Library:
 
         return True, "BOOK DELETED"
     
+    def deleteBookItem(self, staff_id, barcode):
+        success, staff = self.validate_staff(staff_id)
+        if not success:
+            return False, staff
+
+        success, item = self.validate_book_item(barcode)
+        if not success:
+            return False, item
+
+        if item.deleted:
+            return False, "BOOK ITEM ALREADY DELETED"
+
+        for lending in self.lendings:
+            if lending.bookitem == item and lending.status == "BORROWED":
+                return False, "BOOK ITEM CURRENTLY BORROWED"
+
+        if item.rack:
+            rack = item.rack
+            if item in rack.items:
+                rack.items.remove(item)
+            item.rack = None
+
+        item.deleted = True
+
+        return True, "BOOK ITEM DELETED"
+    
     # -----------------SHOW BOOK---------------
 
     def getAvailableBooks(self):

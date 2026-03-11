@@ -209,6 +209,20 @@ def delete_book(worker_id: str, isbn: str):
     return {"message": "BOOK REMOVED"}
 
 
+@mcp.tool
+def delete_book_item(worker_id: str, barcode: str):
+
+    success, result = library.deleteBookItem(worker_id, barcode)
+
+    if not success:
+        return {"error": result}
+
+    return {
+        "message": "BOOK ITEM DELETED",
+        "barcode": barcode
+    }
+
+
 # ---------------- BOOK ITEM ----------------
 
 @mcp.tool
