@@ -679,6 +679,10 @@ class Library:
         return True, reservation
 
     def cancelReservation(self, reservation_id, user_id):
+        success, user = self.validate_user(user_id)
+        if not success:
+            return False, user
+
         for r in self.bookreservations:
             if r.id == reservation_id:
                 if r.user.id != user_id:
